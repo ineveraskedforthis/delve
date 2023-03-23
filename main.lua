@@ -10,7 +10,8 @@ PLAYER = {
     stats = {
         dexterity = 20,
         strength = 10
-    }
+    },
+    speed = 5
 }
 
 CHUNK_SIZE = 100
@@ -34,8 +35,36 @@ local function index_to_coord(x, size)
     return {math.floor(x / size), x % size}
 end
 
+local function pos_neighbours(x, size) 
+    local tmp = {}
+    if x[1] + 1 < size then
+        table.insert(tmp, {x[1] + 1, x[2]})
+    end
+
+    if x[1] - 1 >= 0 then
+        table.insert(tmp, {x[1] - 1, x[2]})
+    end
+    
+    if x[2] + 1 < size then
+        table.insert(tmp, {x[1], x[2] + 1})
+    end 
+
+    if x[2] - 1 >= 0 then
+        table.insert(tmp, {x[1], x[2] - 1})
+    end
+
+    return tmp
+end
 
 ---@alias CHUNK table<number, boolean|nil>
+
+
+function generate_tunnel(chunk, size, start, start_dir, length)
+    local start_index = coord_to_index(start, size)
+    chunk[start_index] = nil
+    
+    local n = pos_neighbours(start)    
+end
 
 ---generates chunk
 ---@return CHUNK
@@ -45,25 +74,82 @@ local function generate_map()
     -- each chunk is 100x100
     for i = 0, CHUNK_SIZE - 1 do
         for j = 0, CHUNK_SIZE - 1 do
-            if love.math.random(2) > 1 then
+            if love.math.random(8) > 2 then
                 chunk[coord_to_index({i, j}, CHUNK_SIZE)] = true
             end
         end
     end
 
+    -- generate main tunnel
+    local center = math.floor(CHUNK_SIZE / 2)
+    for i = 0, CHUNK_SIZE / 5 do
+        chunk[coord_to_index({i, center}, CHUNK_SIZE)] = nil
+        chunk[coord_to_index({i, center - 1}, CHUNK_SIZE)] = nil
+        chunk[coord_to_index({i, center + 1}, CHUNK_SIZE)] = nil
+
+        chunk[coord_to_index({i, center - 2}, CHUNK_SIZE)] = nil
+        chunk[coord_to_index({i, center + 2}, CHUNK_SIZE)] = nil
+    end
+
+    -- generate a web of tunnels
+
+
     chunk[0] = nil
     return chunk
 end
 
-SCALE = 5
+SCALE = 1
 BLOCK_SIZE_DISPLAY = 10
 
 local function add(x, y)
     return {x[1] + y[1], x[2] + y[2]}
 end
 
+local function diff(x, y)
+    return {x[1] - y[1], x[2] - y[2]}
+end
+
 local function minus(x)
     return {-x[1], -x[2]}
+end
+
+local function norm(x) 
+    return math.sqrt(x[1] * x[1] + x[2]  * x[2])
+end
+
+local function mult(x, c)
+    return {x[1] * c, x[2] * c}
+end
+
+local function normalize(x)
+    local tmp = norm(x) 
+    x[1] = x[1] / tmp
+    x[2] = x[2] / tmp
+end
+
+local function scale(x, s) 
+    x[1] = x[1] * s 
+    x[2] = x[2] * s
+end
+
+local function shift(x, shift)
+    x[1] = x[1] + shift[1]
+    x[2] = x[2] + shift[2]
+end
+
+local function move_toward(x, target, speed)
+    if (target == nil) then
+        return
+    end 
+    local dir = diff(target, x)
+    if norm(dir) <= speed + 0.001 then
+        x[1] = target[1]
+        x[2] = target[2]
+        return
+    end
+    normalize(dir)
+    scale(dir, speed)
+    shift(x, dir)
 end
 
 local function screen_to_coord(x, block_size, camera)
@@ -101,17 +187,26 @@ function love.load()
 
 end
 
-local width, height = love.window.getMode()
-local tmp = coord_to_screen(PLAYER.position, BLOCK_SIZE_DISPLAY, {0, 0})
+local function update_camera()
+    local width, height = love.window.getMode()
+    local tmp = coord_to_screen(PLAYER.position, BLOCK_SIZE_DISPLAY, {0, 0})
+    CAMERA = {-width / 2 + tmp[1], -height / 2 + tmp[2]}
+end
 
-CAMERA = {-width / 2 + tmp[1], -height / 2 + tmp[2]}
+
 -- CAMERA = add(PLAYER.position, ({width / 2, height / 2}))
 
-function love.update()
-    
+function love.update(dt)
+    move_toward(PLAYER.position, PLAYER.target, dt * PLAYER.speed)
+    update_camera()
 end
 
 function love.draw()
     draw_chunk(CHUNK, CAMERA)
     draw_player(CAMERA)
+end
+
+function love.mousepressed(x, y, button, istouch, presses)
+    local tmp = screen_to_coord({x, y}, BLOCK_SIZE_DISPLAY, CAMERA)
+    PLAYER.target = tmp
 end
